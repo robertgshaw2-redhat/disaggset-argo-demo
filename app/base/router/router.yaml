@@ -58,6 +58,7 @@ spec:
         - --tracing=false
         - --metrics-endpoint-auth=false
         - --v=2
+        - --allow-experimental-plugins  # the disaggregatedset-rollout-screener is Alpha in v1.0.0
         env:
         - name: POD_NAMESPACE
           valueFrom:
