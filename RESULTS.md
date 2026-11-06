@@ -105,3 +105,41 @@ The same demo on lws#1265's per-role `partition`, run on 2026-11-02:
 - **Rolling back to a deleted revision** re-created its LWS under the same hash (`0c74d8d1`) and held it like a release.
 - **Not tested:** a failed analysis while held, sub-roles or Hash groups, and `CanaryBlocked` (every role has at least
   two groups here).
+
+## Run 4: Kargo, with the rollout screener
+
+The `kargo/` variant on the same cluster: Kargo v1.12.5, the Application syncing `app/kargo` from `env/prod`, and the
+EPP running the `disaggregatedset-rollout-screener` (which needed `--allow-experimental-plugins`; the first sync
+without it crash-looped the EPP until Kargo promoted the fix). Every Stage was auto-promoted for this run, so
+verification alone gated each step. Load: `load/load.yaml`, ~36 requests/s, tallying the revision on each response.
+
+| Time | Event | Result |
+|---|---|---|
+| 22:29–22:46 | bootstrap: the running release (r7) through all three Stages | each Stage verified; one revision, nothing to hold |
+| 22:47:11 | commit `Release engine r8` to `main` | Warehouse picked it up at 22:49 (1-minute poll) |
+| 22:49:17 | canary-33 promoted (env/prod at 33%) | 22:51:02 `CanaryHeld` 2 + 1; verified 22:51:20 |
+| 22:51:42 | canary-67 promoted | 22:53:27 `CanaryHeld` 1 + 2; verified 22:53:44 |
+| 22:53:59 | full promoted | 22:55:52 `Available` 0 + 3, r7 deleted; verified 22:56:05 |
+
+Verification at each Stage (`kargo/verify.py`):
+
+| Stage | Counts | Pinned to old (r7) | Pinned to new (r8) | Unpinned, new share (screener weight) |
+|---|---|---|---|---|
+| canary-33 | 1 of 3 new per role, as rounded | 30/30, median 0.08 s | 30/30, median 0.08 s | 35% (33%) |
+| canary-67 | 2 of 3 | 30/30, 0.08 s | 30/30, 0.07 s | 77% (67%) |
+| full | one revision | – | 30/30, 0.07 s | 100% |
+
+Every pinned request came back from the revision it asked for. The load's per-revision tally per 30 s: 31–36% on r8
+while held at 33%, 65–68% at 67%.
+
+Load: 22,168 succeeded, **1 failed** (HTTP 503 at 22:55:32, as r7's last groups were being deleted at 100%). The
+router's access log format records no request detail, so the cause is not established; the screener's metrics show
+5 requests screened without a response over the run.
+
+Kargo notes:
+
+- Kargo writes AnalysisRuns but does not execute them: an Argo Rollouts controller watching the Project's namespace
+  must. With it scaled to 0 the first verification sat with no status.
+- All three Stages sync one Application, so after a later Stage promotes, the earlier Stages report Unhealthy (each
+  checks the Application is at its own commit).
+- `yaml-update` wrote `canaryPercent: 33` as an integer, as the CRD requires.

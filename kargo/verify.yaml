@@ -1,6 +1,7 @@
 # Kargo Stage verification (pipeline.yaml): an Argo Rollouts AnalysisTemplate whose one metric is a Job running
-# verify.py. Kargo's controller runs the AnalysisRun itself; only the Argo Rollouts CRDs are needed. The Job reads the
-# DisaggregatedSet and its pods and sends requests through the router, so it runs in the app's namespace (the Project).
+# verify.py. Kargo creates the AnalysisRun in the Project's namespace and an Argo Rollouts controller watching that
+# namespace executes it (Kargo only reads the result), so Argo Rollouts must be installed, though nothing here uses a
+# Rollout. The Job reads the DisaggregatedSet and its pods and sends requests through the router.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
