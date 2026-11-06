@@ -1,0 +1,177 @@
+# The demo router: upstream llm-d-router v1.0.0's endpoint picker with its sample P/D config (always disaggregate,
+# config/routing.yaml), its InferencePool over the qwen DisaggregatedSet, and an Envoy in front (config/envoy.yaml).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pd-demo-epp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pd-demo-epp
+rules:
+- apiGroups: ['']
+  resources: [pods]
+  verbs: [get, watch, list]
+- apiGroups: [inference.networking.k8s.io]
+  resources: [inferencepools]
+  verbs: [get, watch, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pd-demo-epp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pd-demo-epp
+subjects:
+- kind: ServiceAccount
+  name: pd-demo-epp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pd-demo-epp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pd-demo-epp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pd-demo-epp
+    spec:
+      containers:
+      - name: epp
+        image: ghcr.io/llm-d/llm-d-router-endpoint-picker@sha256:024188e998f516879f68532016ca24fabca00afbdcc2af9a61b17634e197df2c  # v1.0.0
+        args:
+        - --pool-name=pd-demo
+        - --pool-namespace=$(POD_NAMESPACE)
+        - --pool-group=inference.networking.k8s.io
+        - --config-file=/config/routing.yaml
+        - --grpc-health-port=9003
+        - --tracing=false
+        - --metrics-endpoint-auth=false
+        - --v=2
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        ports:
+        - containerPort: 9002
+          name: grpc
+        - containerPort: 9003
+          name: grpc-health
+        - containerPort: 9090
+          name: metrics
+        readinessProbe:
+          grpc:
+            port: 9003
+            service: readiness
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: '2'
+            memory: 4Gi
+          limits:
+            memory: 8Gi
+        volumeMounts:
+        - mountPath: /config
+          name: config
+      serviceAccountName: pd-demo-epp
+      volumes:
+      - name: config
+        configMap:
+          name: pd-demo-epp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pd-demo-epp
+spec:
+  clusterIP: None
+  ports:
+  - name: grpc-ext-proc
+    port: 9002
+  - name: metrics
+    port: 9090
+  selector:
+    app.kubernetes.io/name: pd-demo-epp
+---
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: pd-demo
+spec:
+  appProtocol: http
+  endpointPickerRef:
+    failureMode: FailClose
+    group: ''
+    kind: Service
+    name: pd-demo-epp
+    port:
+      number: 9002
+  selector:
+    matchLabels:
+      pd-demo.llm-d.ai/pool: qwen
+  targetPorts:
+  - number: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pd-demo-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pd-demo-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pd-demo-proxy
+    spec:
+      containers:
+      - name: envoy-proxy
+        image: docker.io/envoyproxy/envoy@sha256:447f857a01460642ef08ca2ab51136a44b9101fc2fa6bca2d1ae534466fa62f5
+        args: [--service-node, envoy-sidecar, --log-level, warn, --concurrency, '2', -c, /etc/envoy/envoy.yaml]
+        ports:
+        - containerPort: 8081
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 19001
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: '1'
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/envoy
+          name: config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: pd-demo-envoy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pd-demo-proxy
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8081
+  selector:
+    app.kubernetes.io/name: pd-demo-proxy

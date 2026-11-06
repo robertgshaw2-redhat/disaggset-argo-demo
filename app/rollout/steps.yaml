@@ -1,0 +1,91 @@
+# The step runner: an AnalysisTemplate whose only metric is a Job running steps.py (Argo Rollouts' job provider; the
+# Job's exit code is the step's result, and a failed step aborts the Rollout), and the same script as a one-off Job
+# that sets canaryPercent to 0 once, on the first sync. A plain resource, not an Argo CD hook: Argo CD keeps a sync
+# operation with hooks open until every resource is Healthy, and the Rollout is Suspended at each pause, so a hook
+# held the operation open through a release and Argo CD synced no new commit (such as a rollback) meanwhile.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pd-demo-steps
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pd-demo-steps
+rules:
+- apiGroups: [disaggregatedset.x-k8s.io]
+  resources: [disaggregatedsets]
+  verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pd-demo-steps
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pd-demo-steps
+subjects:
+- kind: ServiceAccount
+  name: pd-demo-steps
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: ds-step
+spec:
+  args:
+  - name: command    # hold | rest
+  - name: percent
+  metrics:
+  - name: step
+    count: 1
+    failureLimit: 0
+    provider:
+      job:
+        spec:
+          backoffLimit: 0
+          activeDeadlineSeconds: 2400
+          template:
+            spec:
+              serviceAccountName: pd-demo-steps
+              restartPolicy: Never
+              containers:
+              - name: step
+                image: python:3.12-slim
+                command: [python3, -u, /scripts/steps.py, '{{args.command}}', '{{args.percent}}']
+                resources:
+                  requests: {cpu: 100m, memory: 128Mi}
+                  limits: {memory: 256Mi}
+                volumeMounts:
+                - mountPath: /scripts
+                  name: scripts
+              volumes:
+              - name: scripts
+                configMap:
+                  name: pd-demo-steps
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pd-demo-init-canary
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      serviceAccountName: pd-demo-steps
+      restartPolicy: Never
+      containers:
+      - name: init
+        image: python:3.12-slim
+        command: [python3, -u, /scripts/steps.py, init, '0']
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {memory: 256Mi}
+        volumeMounts:
+        - mountPath: /scripts
+          name: scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: pd-demo-steps

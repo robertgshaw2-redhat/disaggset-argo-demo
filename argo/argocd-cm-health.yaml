@@ -1,0 +1,22 @@
+# A merge patch for Argo CD's argocd-cm: a health check for DisaggregatedSet, which Argo CD has none for.
+#   kubectl -n argocd patch configmap argocd-cm --type merge --patch-file argo/argocd-cm-health.yaml
+# Available, or Progressing with reason CanaryHeld (a settled, intentional hold, the way Argo CD's built-in StatefulSet
+# check treats a partitioned rollout), is Healthy, so the Application settles while the Rollout waits at a pause. Any
+# other Progressing reason, including CanaryBlocked, is Progressing. Only conditions for the current generation count.
+data:
+  resource.customizations.health.disaggregatedset.x-k8s.io_DisaggregatedSet: |
+    hs = {status = "Progressing", message = "Waiting for status"}
+    if obj.status ~= nil and obj.status.conditions ~= nil and obj.status.observedGeneration == obj.metadata.generation then
+      for _, c in ipairs(obj.status.conditions) do
+        if c.status == "True" and c.observedGeneration == obj.metadata.generation then
+          if c.type == "Available" or (c.type == "Progressing" and c.reason == "CanaryHeld") then
+            hs.status = "Healthy"
+            hs.message = c.message
+          elseif c.type == "Progressing" then
+            hs.status = "Progressing"
+            hs.message = c.message
+          end
+        end
+      end
+    end
+    return hs

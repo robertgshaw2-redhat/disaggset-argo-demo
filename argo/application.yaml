@@ -1,0 +1,30 @@
+# The Argo CD Application that makes ../app GitOps:  kubectl apply -n argocd -f argo/application.yaml
+# Point repoURL/targetRevision at your fork (a release is a commit) and set the destination namespace.
+#
+# Argo CD applies server-side and diffs server-side, so it owns only the fields in git: the DisaggregatedSet's
+# template, rollout budgets and scalingPolicy, but not spec.rolloutStrategy.canaryPercent, which git leaves out and the
+# Rollout's steps own (field manager pd-demo-canary), nor role replicas, which the autoscaler owns through the
+# DisaggregatedSetRoleScalers. No ignoreDifferences: nothing in git is changed at runtime. No sync hooks either: a hook
+# keeps the sync operation open while the Rollout is Suspended at a pause, which blocks the next commit (a rollback).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qwen-pd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
+    targetRevision: main
+    path: app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: disaggset-demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
+    - CreateNamespace=true
