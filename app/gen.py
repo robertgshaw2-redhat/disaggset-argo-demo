@@ -17,7 +17,7 @@ import textwrap
 
 # The engine revision to run. Each is KV-compatible with the others (only --max-num-seqs differs), so mixed old/new
 # prefill-decode pairs keep working while a rollout is held.
-ENGINE = "r7"
+ENGINE = "r8"
 # Bump to start the steps without an engine change, e.g. to roll back to the stable engine through the steps
 # (Argo Rollouts skips the steps when the pod template returns to the stable one).
 RELEASE = 3

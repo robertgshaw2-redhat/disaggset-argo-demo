@@ -26,7 +26,7 @@ spec:
             labels:
               llm-d.ai/role: prefill
               pd-demo.llm-d.ai/pool: qwen
-              pd-demo.llm-d.ai/engine: r7
+              pd-demo.llm-d.ai/engine: r8
           spec:
             containers:
             - name: vllm
@@ -40,7 +40,7 @@ spec:
                   --served-model-name Qwen/Qwen3-0.6B \
                   --port 8000 \
                   --max-model-len 16384 \
-                  --max-num-seqs 48 \
+                  --max-num-seqs 56 \
                   --gpu-memory-utilization 0.5 \
                   --enable-prefix-caching \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \
@@ -129,7 +129,7 @@ spec:
             labels:
               llm-d.ai/role: decode
               pd-demo.llm-d.ai/pool: qwen
-              pd-demo.llm-d.ai/engine: r7
+              pd-demo.llm-d.ai/engine: r8
           spec:
             initContainers:
             - name: routing-proxy
@@ -152,7 +152,7 @@ spec:
                   --served-model-name Qwen/Qwen3-0.6B \
                   --port 8200 \
                   --max-model-len 16384 \
-                  --max-num-seqs 48 \
+                  --max-num-seqs 56 \
                   --gpu-memory-utilization 0.5 \
                   --enable-prefix-caching \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}' \

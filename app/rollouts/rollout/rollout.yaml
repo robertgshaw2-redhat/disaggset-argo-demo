@@ -19,7 +19,7 @@ spec:
       labels:
         app.kubernetes.io/name: qwen-release
       annotations:
-        pd-demo.llm-d.ai/engine: r7
+        pd-demo.llm-d.ai/engine: r8
         pd-demo.llm-d.ai/release: "3"
     spec:
       containers:
