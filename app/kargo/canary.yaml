@@ -6,4 +6,4 @@ metadata:
   name: qwen
 spec:
   rolloutStrategy:
-    canaryPercent: 33
+    canaryPercent: 67
