@@ -1,0 +1,66 @@
+# Kargo Stage verification (pipeline.yaml): an Argo Rollouts AnalysisTemplate whose one metric is a Job running
+# verify.py. Kargo's controller runs the AnalysisRun itself; only the Argo Rollouts CRDs are needed. The Job reads the
+# DisaggregatedSet and its pods and sends requests through the router, so it runs in the app's namespace (the Project).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pd-demo-verify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pd-demo-verify
+rules:
+- apiGroups: [disaggregatedset.x-k8s.io]
+  resources: [disaggregatedsets]
+  verbs: [get]
+- apiGroups: ['']
+  resources: [pods]
+  verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pd-demo-verify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pd-demo-verify
+subjects:
+- kind: ServiceAccount
+  name: pd-demo-verify
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-release
+spec:
+  args:
+  - name: percent
+  metrics:
+  - name: verify
+    count: 1
+    failureLimit: 0
+    provider:
+      job:
+        spec:
+          backoffLimit: 0
+          activeDeadlineSeconds: 2400
+          template:
+            spec:
+              serviceAccountName: pd-demo-verify
+              restartPolicy: Never
+              containers:
+              - name: verify
+                image: python:3.12-slim
+                command: [python3, -u, /scripts/verify.py, '{{args.percent}}']
+                resources:
+                  requests: {cpu: 100m, memory: 128Mi}
+                  limits: {memory: 256Mi}
+                volumeMounts:
+                - mountPath: /scripts
+                  name: scripts
+              volumes:
+              - name: scripts
+                configMap:
+                  name: pd-demo-verify

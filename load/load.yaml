@@ -1,6 +1,7 @@
 # Steady load through the router for the length of a run, applied by hand, not by Argo CD:
 #   kubectl apply -n <namespace> -f load/load.yaml
-# Four workers send short chat requests back to back; every 30 s the pod logs the totals and any failures. Read the
+# Four workers send short chat requests back to back; every 30 s the pod logs the running totals, any failures, and
+# which revision served the last 30 s of requests (the router's x-llm-d-disagg-revision response header). Read the
 # totals before deleting the pod: kubectl logs pd-demo-load | tail -1
 apiVersion: v1
 kind: Pod
@@ -20,7 +21,7 @@ spec:
     - |
       import json, signal, sys, threading, time, urllib.request
       URL = "http://pd-demo-proxy/v1/chat/completions"
-      ok = fail = 0
+      ok, fail, by_rev = 0, 0, {}
       lock = threading.Lock()
       def worker(w):
           global ok, fail
@@ -33,17 +34,25 @@ spec:
                   req = urllib.request.Request(URL, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
                   with urllib.request.urlopen(req, timeout=60) as r:
                       assert json.load(r)["choices"][0]["message"]["content"]
-                  with lock: ok += 1
+                      rev = r.headers.get("x-llm-d-disagg-revision", "?")
+                  with lock:
+                      ok += 1
+                      by_rev[rev] = by_rev.get(rev, 0) + 1
               except Exception as e:
                   with lock: fail += 1
                   print(time.strftime("%H:%M:%S"), "FAIL", w, repr(e)[:200], flush=True)
                   time.sleep(1)
+      def report(final=False):
+          with lock:
+              line = f"ok={ok} fail={fail} by_revision={dict(sorted(by_rev.items()))}"
+              by_rev.clear()
+          print(time.strftime("%H:%M:%S"), ("FINAL " if final else "") + line, flush=True)
       def done(*_):
-          print(time.strftime("%H:%M:%S"), f"FINAL ok={ok} fail={fail}", flush=True)
+          report(True)
           sys.exit(0)
       signal.signal(signal.SIGTERM, done)
       for w in range(4):
           threading.Thread(target=worker, args=(w,), daemon=True).start()
       while True:
           time.sleep(30)
-          print(time.strftime("%H:%M:%S"), f"ok={ok} fail={fail}", flush=True)
+          report()

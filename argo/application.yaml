@@ -1,4 +1,4 @@
-# The Argo CD Application that makes ../app GitOps:  kubectl apply -n argocd -f argo/application.yaml
+# Variant 1 (Argo Rollouts drives each release): kubectl apply -n argocd -f argo/application.yaml
 # Point repoURL/targetRevision at your fork (a release is a commit) and set the destination namespace.
 #
 # Argo CD applies server-side and diffs server-side, so it owns only the fields in git: the DisaggregatedSet's
@@ -17,7 +17,7 @@ spec:
   source:
     repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
     targetRevision: main
-    path: app
+    path: app/rollouts
   destination:
     server: https://kubernetes.default.svc
     namespace: disaggset-demo

@@ -1,0 +1,221 @@
+# The Kargo pipeline for one release: Freight is a commit on main that touches app/; three Stages promote it into the
+# env/prod branch, which the Argo CD Application (../argo/application-kargo.yaml) syncs from app/kargo.
+#
+#   canary-33 (auto-promoted) --verified--> canary-67 --verified--> full
+#
+# Every promotion copies app/ from the Freight's commit onto env/prod, sets canaryPercent in app/kargo/canary.yaml,
+# commits, pushes, and syncs the Application to that commit. The Stage is healthy once Argo CD reports the Application
+# Healthy, which for the DisaggregatedSet means CanaryHeld (or Available at 100), see ../argo/argocd-cm-health.yaml.
+# Then verification (verify.yaml) checks the hold and sends requests pinned to each revision through the router.
+# Promote canary-67 and full by hand (Kargo UI or CLI). Roll back by promoting the previous Freight to full: that
+# commit restores the old template at canaryPercent 100, which hasB4K/lws#13 rolls straight back.
+#
+# Set these for your setup: the Project (project.yaml) and the namespace in kustomization.yaml (both = the namespace
+# the app runs in), REPO (an SSH URL Kargo can push to, with a git credential Secret in the
+# Project namespace), and the Application name/source URL in argocd-update.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: disaggset-demo
+spec:
+  promotionPolicies:
+  - stageSelector:
+      name: canary-33
+    autoPromotionEnabled: true
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: qwen
+spec:
+  interval: 1m
+  subscriptions:
+  - git:
+      repoURL: git@github.com:robertgshaw2-redhat/disaggset-argo-demo.git
+      branch: main
+      commitSelectionStrategy: NewestFromBranch
+      includePaths:
+      - app
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: canary-33
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: qwen
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      vars:
+      - name: repoURL
+        value: git@github.com:robertgshaw2-redhat/disaggset-argo-demo.git
+      steps:
+      - uses: git-clone
+        config:
+          repoURL: ${{ vars.repoURL }}
+          checkout:
+          - commit: ${{ commitFrom(vars.repoURL).ID }}
+            path: ./src
+          - branch: env/prod
+            create: true
+            path: ./out
+      - uses: git-clear
+        config:
+          path: ./out
+      - uses: copy
+        config:
+          inPath: ./src/app
+          outPath: ./out/app
+      - uses: yaml-update
+        config:
+          path: ./out/app/kargo/canary.yaml
+          updates:
+          - key: spec.rolloutStrategy.canaryPercent
+            value: 33
+      - uses: git-commit
+        config:
+          path: ./out
+          message: "canary 33%: ${{ commitFrom(vars.repoURL).Message }} (${{ commitFrom(vars.repoURL).ID[0:7] }})"
+      - uses: git-push
+        as: push
+        config:
+          path: ./out
+      - uses: argocd-update
+        config:
+          apps:
+          - name: qwen-pd
+            sources:
+            - repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
+              desiredRevision: ${{ outputs.push.commit }}
+  verification:
+    analysisTemplates:
+    - name: verify-release
+    args:
+    - name: percent
+      value: "33"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: canary-67
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: qwen
+    sources:
+      stages: [canary-33]
+  promotionTemplate:
+    spec:
+      vars:
+      - name: repoURL
+        value: git@github.com:robertgshaw2-redhat/disaggset-argo-demo.git
+      steps:
+      - uses: git-clone
+        config:
+          repoURL: ${{ vars.repoURL }}
+          checkout:
+          - commit: ${{ commitFrom(vars.repoURL).ID }}
+            path: ./src
+          - branch: env/prod
+            create: true
+            path: ./out
+      - uses: git-clear
+        config:
+          path: ./out
+      - uses: copy
+        config:
+          inPath: ./src/app
+          outPath: ./out/app
+      - uses: yaml-update
+        config:
+          path: ./out/app/kargo/canary.yaml
+          updates:
+          - key: spec.rolloutStrategy.canaryPercent
+            value: 67
+      - uses: git-commit
+        config:
+          path: ./out
+          message: "canary 67%: ${{ commitFrom(vars.repoURL).Message }} (${{ commitFrom(vars.repoURL).ID[0:7] }})"
+      - uses: git-push
+        as: push
+        config:
+          path: ./out
+      - uses: argocd-update
+        config:
+          apps:
+          - name: qwen-pd
+            sources:
+            - repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
+              desiredRevision: ${{ outputs.push.commit }}
+  verification:
+    analysisTemplates:
+    - name: verify-release
+    args:
+    - name: percent
+      value: "67"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: full
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: qwen
+    sources:
+      stages: [canary-67]
+  promotionTemplate:
+    spec:
+      vars:
+      - name: repoURL
+        value: git@github.com:robertgshaw2-redhat/disaggset-argo-demo.git
+      steps:
+      - uses: git-clone
+        config:
+          repoURL: ${{ vars.repoURL }}
+          checkout:
+          - commit: ${{ commitFrom(vars.repoURL).ID }}
+            path: ./src
+          - branch: env/prod
+            create: true
+            path: ./out
+      - uses: git-clear
+        config:
+          path: ./out
+      - uses: copy
+        config:
+          inPath: ./src/app
+          outPath: ./out/app
+      - uses: yaml-update
+        config:
+          path: ./out/app/kargo/canary.yaml
+          updates:
+          - key: spec.rolloutStrategy.canaryPercent
+            value: 100
+      - uses: git-commit
+        config:
+          path: ./out
+          message: "full: ${{ commitFrom(vars.repoURL).Message }} (${{ commitFrom(vars.repoURL).ID[0:7] }})"
+      - uses: git-push
+        as: push
+        config:
+          path: ./out
+      - uses: argocd-update
+        config:
+          apps:
+          - name: qwen-pd
+            sources:
+            - repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
+              desiredRevision: ${{ outputs.push.commit }}
+  verification:
+    analysisTemplates:
+    - name: verify-release
+    args:
+    - name: percent
+      value: "100"

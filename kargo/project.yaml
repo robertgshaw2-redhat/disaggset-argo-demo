@@ -1,0 +1,8 @@
+# The Kargo Project, applied before kustomization.yaml: kubectl apply -f kargo/project.yaml
+# Its name is the namespace the app runs in. Kargo adopts that namespace only if it is labeled first:
+#   kubectl label namespace disaggset-demo kargo.akuity.io/project=true
+# (Verification Jobs run in the Project's namespace and reach the router and the DisaggregatedSet there.)
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: disaggset-demo

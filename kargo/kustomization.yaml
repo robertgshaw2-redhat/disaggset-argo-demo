@@ -1,0 +1,19 @@
+# Applied by hand once Kargo is installed: kubectl apply -k kargo/
+# The Project, Warehouse and Stages (pipeline.yaml), and the Stages' verification (verify.yaml, verify.py), in the
+# Project's namespace. Change the namespace here and the names in pipeline.yaml together.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: disaggset-demo
+
+resources:
+  - pipeline.yaml
+  - verify.yaml
+
+configMapGenerator:
+  # Referenced by the AnalysisTemplate (a CRD kustomize does not rewrite), so a fixed name.
+  - name: pd-demo-verify
+    files:
+      - verify.py
+    options:
+      disableNameSuffixHash: true

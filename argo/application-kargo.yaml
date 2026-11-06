@@ -1,0 +1,26 @@
+# Variant 2 (Kargo drives each release): kubectl apply -n argocd -f argo/application-kargo.yaml
+# Argo CD syncs app/kargo from the env/prod branch, which only Kargo writes (../kargo/pipeline.yaml). Git owns the
+# whole DisaggregatedSet here, canaryPercent included. The annotation lets those three Stages sync this Application.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qwen-pd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    kargo.akuity.io/authorized-stage: "disaggset-demo:canary-33,disaggset-demo:canary-67,disaggset-demo:full"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/robertgshaw2-redhat/disaggset-argo-demo
+    targetRevision: env/prod
+    path: app/kargo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: disaggset-demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true
+    - CreateNamespace=true

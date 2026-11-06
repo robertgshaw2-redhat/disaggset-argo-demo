@@ -1,8 +1,21 @@
 # Upstream llm-d-router v1.0.0 deploy/config/pd-epp-config.yaml with the always-disaggregate decider, so every
-# request moves KV cache from a prefill pod to a decode pod.
+# request moves KV cache from a prefill pod to a decode pod, plus the DisaggregatedSet rollout screener: it picks one
+# revision per request before both profiles run, so a request's prefill and decode pods always come from the same
+# DisaggregatedSet revision (never an old prefill with a new decode). A revision is eligible once it has a Ready pod in
+# every role, and is weighted by its Ready pods (mode sum). The chosen revision comes back in the
+# x-llm-d-disagg-revision response header; a request that sends that header is pinned to that revision (no match is a
+# 503, never a fallback), which is how ../../kargo/verify.py tests the new revision on its own.
 apiVersion: llm-d.ai/v1
 kind: EndpointPickerConfig
 plugins:
+- type: disaggregatedset-rollout-screener
+  name: rollout-screener
+  parameters:
+    scope:
+      labelSelector: disaggregatedset.x-k8s.io/name=qwen
+    revisionGating:
+      mode: sum
+      requiredRoles: [prefill, decode]
 - type: approx-prefix-cache-producer
   parameters:
     maxPrefixTokensToMatch: 16384
