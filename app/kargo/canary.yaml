@@ -1,0 +1,9 @@
+# Set by Kargo for each Stage (33, 67, 100). Lowering it does not undo progress (hasB4K/lws#13): to roll back, Kargo
+# promotes the previous release to the full Stage, which restores the old template at 100.
+apiVersion: disaggregatedset.x-k8s.io/v1
+kind: DisaggregatedSet
+metadata:
+  name: qwen
+spec:
+  rolloutStrategy:
+    canaryPercent: 33

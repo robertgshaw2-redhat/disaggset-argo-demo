@@ -1,0 +1,14 @@
+# One B200 per pod, through the NVIDIA DRA driver (the cluster has no nvidia.com/gpu device plugin).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: one-b200
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.nvidia.com
+          allocationMode: ExactCount
+          count: 1

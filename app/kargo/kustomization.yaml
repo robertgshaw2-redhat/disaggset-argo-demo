@@ -1,0 +1,11 @@
+# Variant 2, Kargo: the workload with canaryPercent set in git. Kargo promotes a release by copying app/ from the
+# release commit onto the env/prod branch and setting canaryPercent in canary.yaml (../../kargo/stages.yaml);
+# Argo CD syncs app/kargo from env/prod. On main, canary.yaml says 100.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../base
+
+patches:
+  - path: canary.yaml
